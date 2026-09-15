@@ -1,0 +1,44 @@
+# ============================================================
+# 各デスクトップ(RTX 5080 / 5060)で起動する compose。
+#   docker compose up -d        # 起動（http://localhost:8765）
+#   docker compose pull/build   # イメージ更新
+#   docker compose restart      # NAS上のコード更新を反映
+# NAS の共有(SMB/CIFS)を Docker 自身がマウントして /app に渡すので、
+# Windows のドライブ割当に依存せず両デスクトップで同一に動く。
+# 値は .env（.env.example をコピー）で設定。
+# ============================================================
+
+services:
+  editor:
+    image: movieedit2:latest
+    build: .
+    container_name: movieedit2
+    restart: unless-stopped
+    ports:
+      - "8765:8765"
+    gpus: all                      # ローカルGPUをコンテナへ（NVIDIA Container Toolkit / Docker Desktop）
+    # ↑ 古い compose で gpus: が使えない場合は下記に置換:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    volumes:
+      - movieedit2_share:/app                 # NAS上の movieedit2 一式（コード＋models＋app/tddfa＋projects/input/output）
+      - insightface_cache:/root/.insightface  # buffalo_l 等のDLを永続化（初回のみ要ネット）
+      - torch_cache:/root/.cache              # torch hub 等のキャッシュ
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  # NAS の SMB 共有を Docker がマウント（Windows/Linux 共通で確実）
+  movieedit2_share:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//${NAS_HOST}/${NAS_SHARE}"
+      o: "username=${NAS_USER},password=${NAS_PASS},vers=3.0,uid=0,gid=0,file_mode=0777,dir_mode=0777,nobrl"
+  insightface_cache:
+  torch_cache:

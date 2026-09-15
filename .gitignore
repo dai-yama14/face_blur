@@ -1,0 +1,45 @@
+# ── 機密情報 ─────────────────────────────
+.env
+*.key
+*.pem
+credentials*.json
+
+# ── 業務・個人情報（ポートフォリオには含めない）─────
+.company/
+.claude/
+api_usage.json
+
+# ── 案件データ・素材（クライアント情報を含む）───────
+input/
+output/
+projects/
+
+# ── モデル重み・バイナリ（GitHub容量制限）──────────
+models/
+app/tddfa/weights/
+app/tddfa/configs/
+*.pth
+*.pt
+*.onnx
+*.pkl
+*.npy
+
+# ── Python ──────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# ── WSL / OS 生成物 ───────────────────────
+*:Zone.Identifier
+.DS_Store
+Thumbs.db
+
+# ── ログ・一時ファイル ─────────────────────
+*.log
+*.bak
+*.bak-*
+tmp/

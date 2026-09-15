@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>movieedit2 - 顔ブラーエディター</title>
+<link rel="stylesheet" href="/static/style.css?v=10">
+</head>
+<body>
+
+<!-- ═══ スタート画面: プロジェクト一覧 ═══ -->
+<div id="screen-start" class="screen">
+  <div class="start-wrap">
+    <h1>🎬 顔ブラーエディター</h1>
+    <p id="usage-global" class="muted"></p>
+
+    <section class="card">
+      <h2>プロジェクトを開く（前回の続きから）</h2>
+      <div id="project-list" class="project-list">
+        <p class="muted">読み込み中...</p>
+      </div>
+      <div class="batch-bar">
+        <label title="各追跡の完了後に漏れ検品と自動修正を実行（朝には要確認マーク付き）">
+          <input type="checkbox" id="chk-batch-qc" checked> 追跡後にQCも実行
+        </label>
+        <button id="btn-batch" disabled>バッチ追跡</button>
+        <span class="muted">☑で選んだプロジェクトを保存済み設定で順番に処理します（夜間向け・スリープ無効推奨）</span>
+      </div>
+      <div id="batch-status"></div>
+    </section>
+
+    <section class="card">
+      <h2>新規プロジェクト</h2>
+      <div class="row">
+        <label>動画フォルダ</label>
+        <input type="text" id="video-dir" placeholder="~/projects/movieedit/input">
+        <button id="btn-scan-dir">再読込</button>
+      </div>
+      <div id="video-list" class="video-list"></div>
+      <div class="row">
+        <label>または動画パスを直接指定</label>
+        <input type="text" id="video-path-direct" placeholder="/path/to/video.mp4">
+        <button id="btn-create-direct">作成</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ═══ エディター画面 ═══ -->
+<div id="screen-editor" class="screen hidden">
+  <header id="topbar">
+    <button id="btn-back" title="プロジェクト一覧へ">←</button>
+    <span id="proj-name"></span>
+    <span id="save-status" class="muted"></span>
+    <span class="spacer"></span>
+    <select id="detect-region"
+      title="マスクする範囲。対象人物の指定（リファレンス）とは独立です。口元のみを選んでも人物の指定は顔で行えます">
+      <option value="face">マスク: 顔全体</option>
+      <option value="mouth">マスク: 口元のみ</option>
+    </select>
+    <button id="btn-detect" title="InsightFaceによる高速検出">🔍 高速検出</button>
+    <button id="btn-track" title="SAM 2 + ArcFace + Claude自動クリック">🎯 高精度追跡</button>
+    <button id="btn-detect-cancel" class="hidden">✖ 中止</button>
+    <span id="detect-status" class="muted"></span>
+    <label class="toggle" title="追跡中に検出位置を追いかけて表示">
+      <input type="checkbox" id="chk-live" checked> ライブ表示</label>
+    <label class="toggle"><input type="checkbox" id="chk-preview"> ブラープレビュー</label>
+    <label class="toggle" title="マスク（赤）楕円の表示・非表示">
+      <input type="checkbox" id="chk-show-mask" checked> マスク枠</label>
+    <label class="toggle" title="追跡中の検出範囲（オレンジ）の表示・非表示">
+      <input type="checkbox" id="chk-show-detect" checked> 検出枠</label>
+    <label class="toggle" title="このフレームで顔を実測し、認識中のランドマーク（68/106/5点）を表示。横顔の認識確認用">
+      <input type="checkbox" id="chk-show-landmarks"> ランドマーク</label>
+    <span id="api-usage" class="muted" title="Claude API 累計使用量（概算）"></span>
+    <button id="btn-save">💾 保存</button>
+    <button id="btn-history" title="変更履歴から任意の地点に戻す（誤操作の取り消し）">🕘 履歴</button>
+    <button id="btn-qc" title="ブラー合成結果をサンプリング検品し、漏れを自動修正します（直らない箇所はタイムラインに赤マーク）">✅ 漏れQC</button>
+    <button id="btn-export">🎞 mp4書き出し</button>
+    <button id="btn-ae-json" title="After Effects 取り込み用JSON（mouth_mask_importer2.jsx 用）を書き出します">🎬 AE用JSON</button>
+    <span id="export-status" class="muted"></span>
+  </header>
+
+  <div id="main">
+    <!-- 左パネル: 人物とブラー設定 -->
+    <aside id="sidebar">
+      <div id="track-panel">
+        <h3>🎯 高精度追跡の設定</h3>
+        <div class="ctl">
+          <label>対象</label>
+          <select id="track-mode">
+            <option value="all">映っている全員</option>
+            <option value="reference">特定人物（リファレンス照合）</option>
+          </select>
+        </div>
+        <div class="ctl">
+          <button id="btn-pick-target" title="動画のフレーム上で対象人物の顔をクリックして登録します">🖱 動画から対象人物を選択</button>
+        </div>
+        <div class="ctl hidden" id="ref-images-ctl">
+          <label>リファレンス画像（動画からの選択 or パス指定・1行1枚）</label>
+          <div id="ref-thumbs"></div>
+          <textarea id="ref-images" rows="3"
+            placeholder="/path/to/face1.jpg&#10;/path/to/face2.jpg"></textarea>
+          <label class="toggle" style="margin-top:6px">
+            <input type="checkbox" id="chk-autoclick" checked>
+            Claude 自動クリックで穴埋め
+          </label>
+          <p class="hint" id="autoclick-note"></p>
+        </div>
+      </div>
+      <hr class="side-sep">
+
+      <div class="side-head">
+        <h3>人物</h3>
+        <button id="btn-add-person" title="クリックした位置に人物を追加">＋追加</button>
+      </div>
+      <div id="person-list"></div>
+
+      <div id="blur-panel" class="hidden">
+        <h3>ブラー設定 <span id="blur-target" class="muted"></span></h3>
+        <div class="ctl">
+          <label>種類</label>
+          <select id="blur-type">
+            <option value="gaussian">ガウシアン</option>
+            <option value="mosaic">モザイク</option>
+          </select>
+        </div>
+        <div class="ctl">
+          <label>濃さ <span id="blur-strength-val"></span>
+            <span id="strength-kf-info" class="muted"></span></label>
+          <input type="range" id="blur-strength" min="0" max="100" step="1">
+          <div class="kf-strength-btns">
+            <button id="btn-skf-add" title="現在フレームに濃さキーフレームを追加/更新。以降スライダーは現在フレームにキーを打ちます（AEのストップウォッチON相当）">◆ 濃さKF</button>
+            <button id="btn-skf-delete" title="現在フレームの濃さキーフレームを削除">◇ 削除</button>
+            <button id="btn-skf-clear" title="濃さキーフレームを全削除して固定値に戻す">✖ 全解除</button>
+          </div>
+        </div>
+        <div class="ctl">
+          <label>フェザー <span id="blur-feather-val"></span></label>
+          <input type="range" id="blur-feather" min="0" max="100" step="1">
+        </div>
+        <hr>
+        <h3>このフレームの操作</h3>
+        <div class="kf-actions">
+          <button id="btn-kf-add">キーフレーム追加/更新</button>
+          <button id="btn-kf-reseed" title="このフレームの修正を引き継いで、以降を SAM 2 で検出し直します（次の手動キーフレームまで、最大240フレーム）">▶ ここから再追跡 (SAM 2)</button>
+          <button id="btn-kf-prop" title="このフレームの手動修正量を、次の手動キーフレームまでの自動キーフレームに適用します（幾何オフセットのみ・高速）">⇥ 以降のフレームへ伝播</button>
+          <button id="btn-kf-toggle">表示/非表示 切替</button>
+          <button id="btn-kf-absent" title="このフレームは対象人物が不在（誤認識/飛び回り）。マスクを画面外へ退避し、ブラーを掛けません。もう一度押すと復帰">🚫 不在/復帰（画面外へ）</button>
+          <button id="btn-kf-delete">キーフレーム削除</button>
+        </div>
+        <p class="hint">
+          楕円はドラッグで移動、白ハンドルでサイズ変更、<br>
+          ◎ハンドル（上）で回転。<br>
+          編集すると現在フレームに手動キーフレームが打たれます。<br>
+          修正を後続にも効かせるには「⇥ 以降のフレームへ伝播」。<br>
+          ホイールで拡大縮小、ホイールドラッグで移動、<kbd>0</kbd>でリセット。<br>
+          <kbd>A</kbd>=1フレーム戻る / <kbd>S</kbd>=SAM 2 で1フレーム伝播して進む。
+        </p>
+      </div>
+    </aside>
+
+    <!-- 中央: キャンバス -->
+    <div id="canvas-wrap">
+      <canvas id="canvas"></canvas>
+    </div>
+  </div>
+
+  <!-- 下部: タイムライン -->
+  <footer id="timeline">
+    <div class="tl-controls">
+      <button id="btn-play">▶</button>
+      <button id="btn-prev">⏴1</button>
+      <button id="btn-next">1⏵</button>
+      <input type="text" id="frame-jump" class="mono" size="7"
+        title="フレーム番号を入力して Enter でジャンプ">
+      <span id="frame-info" class="mono"></span>
+      <span id="range-info" class="mono"></span>
+      <input type="text" id="range-set" class="mono" size="9" placeholder="始-終"
+        title="開始-終了フレームを入力（例 120-180）してEnterまたは「区間設定」で区間指定">
+      <button id="btn-range-set" title="入力したフレーム番号で区間を設定">区間設定</button>
+      <button id="btn-range-bridge" disabled
+        title="区間内を前後キーフレームの補間で埋める（手動KFは保持）">区間を補間</button>
+      <button id="btn-range-blend" disabled
+        title="先頭Iと末尾Oの手動修正量を線形配分して区間内の自動KFに乗せる。ズレが一定でない区間向け（両端を手で直してから実行）">区間をブレンド修正</button>
+      <button id="btn-range-reseed" disabled
+        title="区間の先頭キーフレームをシードに、区間内だけ再追跡">区間を再追跡</button>
+      <button id="btn-range-absent" disabled
+        title="区間内を不在化：マスクを画面外へ退避しブラーを掛けない（対象が映っていない/誤認識区間）。先頭が不在なら区間を復帰">区間を不在化/復帰</button>
+      <button id="btn-range-clear" disabled>区間解除</button>
+      <span class="tl-legend mono">
+        🟪要注意 🟥サイズ異常 🟨遮蔽補間 ▼QC漏れ ｜
+        N/P:要注意へ移動 R:確認済み I/O:区間指定 ホイール:ズーム
+      </span>
+    </div>
+    <input type="range" id="seek" min="0" value="0" step="1">
+    <canvas id="tl-tracks" height="0"></canvas>
+  </footer>
+</div>
+
+<!-- ═══ 変更履歴（undo）モーダル ═══ -->
+<div id="history-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-head">
+      <span>🕘 変更履歴</span>
+      <button id="btn-history-close" title="閉じる">✕</button>
+    </div>
+    <p class="muted modal-desc">
+      各項目は、その操作を行う<b>直前の状態</b>です。選んで復元すると、その操作以降を取り消せます。
+      いまの状態も「復元前の状態」として残るので、やり直せます（最大50件）。
+    </p>
+    <div id="history-list"></div>
+  </div>
+</div>
+
+<script src="/static/app.js?v=13"></script>
+</body>
+</html>
