@@ -109,14 +109,3 @@ models/          SAM 2.1 チェックポイント（sam2.1_hiera_base_plus.pt）
 projects/        セーブファイル（.mvproj.json）
 output/          書き出した mp4
 ```
-
-## v2 アーキテクチャ実装状況
-
-設計書: `.company/engineering/docs/face-blur-v2-architecture.md`
-
-- [x] SAM 2 による時間伝播トラッキング（マスク → 回転付き楕円）
-- [x] ArcFace リファレンス照合による特定人物の自動識別（アンカー + 自己検証）
-- [x] Claude vision による失敗区間の自動再シード（要 `ANTHROPIC_API_KEY`）
-- [x] ショット（カット）単位の処理（ヒストグラム相関 + 窓分割でメモリ制御）
-- [ ] Claude 自動クリックの実運用検証（APIキー設定後）
-- [ ] Vision LLM 最終QC（ブラー漏れチェック）
